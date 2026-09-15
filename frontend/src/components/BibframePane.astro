@@ -1,0 +1,446 @@
+<div class="bf-viewer-pane-actions">
+  <button id="bf-view-custom" type="button" aria-pressed="true">
+    Custom
+  </button>
+
+  <button id="bf-view-xml" type="button" aria-pressed="false">
+    RDF/XML
+  </button>
+
+  <button id="bf-view-turtle" type="button" aria-pressed="false">
+    Turtle
+  </button>
+
+  <span class="bf-viewer-spacer"></span>
+
+  <button id="bf-expand-all" type="button">
+    Expand all
+  </button>
+
+  <button id="bf-collapse-all" type="button">
+    Close all
+  </button>
+
+  <button id="bf-copy" type="button" hidden>
+    Copy
+  </button>
+</div>
+
+<div id="bf" class="bf-viewer-pane bf-viewer-scroll"></div>
+<pre id="bf-xml" class="bf-viewer-pane bf-viewer-scroll" hidden></pre>
+<pre id="bf-turtle" class="bf-viewer-pane bf-viewer-scroll" hidden></pre>
+
+<style>
+  .bf-viewer-pane {
+    min-width: 0;
+  }
+
+  .bf-viewer-scroll {
+    height: 70vh;
+    overflow: auto;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    border: 1px solid currentColor;
+    padding: 0.5rem;
+    resize: horizontal;
+    max-width: 95%;
+  }
+
+  /* Astro's scoped styles do not reach elements built by JS.
+    Thus :global() is required. It's also prefixed by a template element
+    so the rules won't leak into the rest of the site. */
+  .bf-viewer-scroll :global(.bf-viewer-entity) {
+    margin-block-end: 0.75rem;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-entity > summary) {
+    cursor: pointer;
+    font-weight: bold;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-entity > .bf-viewer-props) {
+    padding-inline-start: 1.5rem;
+    padding-block-start: 0.5rem;
+  }
+
+  /*
+  Note:
+    display: contents on the row makes its label and value direct children of this grid, so columns align across all rows.
+    consequence: the row cannot have its own background or border.
+  */
+  .bf-viewer-scroll :global(.bf-viewer-props) {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 0.75rem;
+    margin: 0;
+    padding-inline-start: 1.5rem;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-prop) {
+    display: contents;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-pred) {
+    opacity: 0.75;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-val) {
+    white-space: nowrap;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-meta) {
+    opacity: 0.6;
+    font-size: 0.9em;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-nested > summary) {
+    cursor: pointer;
+  }
+
+  .bf-viewer-scroll :global(.bf-viewer-nested > .bf-viewer-props) {
+    border-inline-start: 1px solid currentColor;
+    padding-inline-start: 0.75rem;
+  }
+
+  .bf-viewer-pane-actions {
+    display: flex;
+    width: 98%;
+    gap: 0.5rem;
+    margin-block-end: 0.5rem;
+    align-items: center;
+    height: 30px;
+  }
+
+  .bf-viewer-pane-actions > button {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .bf-viewer-pane-actions > button[aria-pressed="true"] {
+    font-weight: bold;
+  }
+
+  .bf-viewer-spacer {
+    flex: 1;
+  }
+
+  pre.bf-viewer-scroll {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+</style>
+
+<script>
+  import {
+    type Triple,
+    type TripleIndex,
+    RDF_TYPE,
+    getSubjectType,
+    getRootDisplaySubjects,
+    humanize,
+    indexTriples,
+    isLeaf,
+    shortenIri,
+  } from "@/utils/bf-viewer/bibframe.ts";
+  import { RECORD_LOADED } from "@/utils/bf-viewer/events.ts";
+  import { createHtmlElement, requireElement } from "@/utils/dom.ts";
+
+  const MAX_DEPTH = 12; // Disallow recursion after this
+  const VIEW_PREFIX = "bf-view-";
+
+  const bfElement = requireElement("bf");
+  const xmlElement = requireElement("bf-xml");
+  const turtleElement = requireElement("bf-turtle");
+
+  const copyButton = requireElement("bf-copy");
+
+  let activeView = "custom"; // Required for copy to know what to copy
+
+  // Listen for record changing events
+  document.addEventListener(RECORD_LOADED, (event) => {
+    bfElement.replaceChildren(renderBibframe(event.detail.triples));
+    xmlElement.textContent = event.detail.bibframe_xml;
+    turtleElement.textContent = event.detail.turtle;
+  });
+
+  // Expand/collapse buttons
+  const expandButton = requireElement("bf-expand-all");
+  const collapseButton = requireElement("bf-collapse-all");
+
+  function setAllOpen(open: boolean) {
+    const toggles = bfElement.querySelectorAll("details");
+    for (const toggle of toggles) {
+      toggle.open = open;
+    }
+  }
+
+  expandButton.addEventListener("click", () => setAllOpen(true));
+  collapseButton.addEventListener("click", () => setAllOpen(false));
+
+  // Custom/XML/Turtle display switch logic
+  const views = { custom: bfElement, xml: xmlElement, turtle: turtleElement };
+  const viewButtons = document.querySelectorAll<HTMLButtonElement>(
+    `[id^="${VIEW_PREFIX}"]`,
+  );
+
+  function setView(newActiveView: string) {
+    // Hide other view but the new active one
+    Object.entries(views).forEach(([name, element]) => {
+      element.hidden = name !== newActiveView;
+    });
+
+    viewButtons.forEach((button) => {
+      const name = button.id.replace(VIEW_PREFIX, "");
+      button.setAttribute("aria-pressed", String(name === newActiveView));
+    });
+
+    // Expand/collapse buttons should only apply to the custom tree
+    expandButton.hidden = newActiveView !== "custom";
+    collapseButton.hidden = newActiveView !== "custom";
+
+    // Copy button is shown only for XML/Turtle
+    activeView = newActiveView;
+    copyButton.hidden = newActiveView === "custom";
+  }
+
+  // Add event listeners for buttons
+  viewButtons.forEach((button) => {
+    const viewName = button.id.replace(VIEW_PREFIX, "");
+    button.addEventListener("click", () => setView(viewName));
+  });
+
+  copyButton.addEventListener("click", async () => {
+    // @ts-ignore
+    const textContent = views[activeView].textContent ?? "";
+
+    try {
+      if (textContent) {
+        await navigator.clipboard.writeText(textContent);
+      }
+
+      // Change copy button text to indicate copy was successful
+      copyButton.textContent = "Copied";
+    } catch (error) {
+      copyButton.textContent = "Copy failed";
+    }
+
+    setTimeout(() => (copyButton.textContent = "Copy"), 1000);
+  });
+
+  // BIBFRAME rendering functions
+  function renderBibframe(triples: Triple[]) {
+    const bySubject = indexTriples(triples);
+    const rootSubjects = getRootDisplaySubjects(bySubject);
+    const roots = new Set(rootSubjects);
+
+    const fragment = document.createDocumentFragment();
+
+    for (const root of rootSubjects) {
+      fragment.appendChild(renderEntity(root, bySubject, roots));
+    }
+
+    return fragment;
+  }
+
+  function renderEntity(
+    subject: string,
+    bySubject: TripleIndex,
+    roots: Set<string>,
+  ): HTMLElement {
+    const subjectType = getSubjectType(bySubject, subject);
+
+    const detailsElement = createHtmlElement("details", "bf-viewer-entity");
+
+    const summaryText = subjectType
+      ? humanize(subjectType)
+      : shortenIri(subject);
+    const summaryElement = createHtmlElement("summary", undefined, summaryText);
+
+    const summaryElementSpan = createHtmlElement(
+      "span",
+      "bf-viewer-meta",
+      ` ${subject}`,
+    );
+    summaryElement.appendChild(summaryElementSpan);
+
+    detailsElement.appendChild(summaryElement);
+
+    const subjectProperties = renderProperties(
+      subject,
+      bySubject,
+      new Set([subject]),
+      0,
+      roots,
+    );
+    detailsElement.appendChild(subjectProperties);
+
+    return detailsElement;
+  }
+
+  function renderProperties(
+    subject: string,
+    bySubject: TripleIndex,
+    seen: Set<string>,
+    depth: number,
+    roots: Set<string>,
+  ): HTMLElement {
+    const propertiesWrapper = createHtmlElement("div", "bf-viewer-props");
+
+    // Ordering: rdf:type > leafs > anything with a toggle
+    const subjectTriples = bySubject.get(subject) || [];
+    const orderedTriples = subjectTriples.sort((a, b) => {
+      if (a.predicate === RDF_TYPE) {
+        return -1;
+      }
+
+      if (b.predicate === RDF_TYPE) {
+        return 1;
+      }
+
+      return Number(isLeaf(b, bySubject)) - Number(isLeaf(a, bySubject));
+    });
+
+    for (const triple of orderedTriples) {
+      const row = createHtmlElement("div", "bf-viewer-prop");
+      const predicate = shortenIri(triple.predicate);
+      const subjectType = getSubjectType(bySubject, triple.object);
+
+      const subjectTypeIsPredicate =
+        subjectType && subjectType.toLowerCase() === predicate.toLowerCase();
+      const tripleHeadingText = subjectTypeIsPredicate
+        ? ""
+        : humanize(predicate);
+      const tripleHeadingElement = createHtmlElement(
+        "div",
+        "bf-viewer-pred",
+        tripleHeadingText,
+      );
+
+      row.appendChild(tripleHeadingElement);
+      row.appendChild(renderValue(triple, bySubject, seen, depth, roots));
+      propertiesWrapper.appendChild(row);
+    }
+
+    return propertiesWrapper;
+  }
+
+  function renderValue(
+    triple: Triple,
+    bySubject: TripleIndex,
+    seen: Set<string>,
+    depth: number,
+    roots: Set<string>,
+  ): HTMLElement {
+    const isCyclic = seen.has(triple.object);
+    const isBelowMaxDepth = depth < MAX_DEPTH;
+
+    if (triple.object_kind === "literal") {
+      return renderLiteralValue(triple);
+    }
+
+    // Render nested triples if they are not cyclic and are below max depth
+    // Note that nodes carrying only rdf:type are considered leaf
+    if (
+      !isLeaf(triple, bySubject) &&
+      !isCyclic &&
+      isBelowMaxDepth &&
+      !roots.has(triple.object)
+    ) {
+      return renderNested(triple, bySubject, seen, depth, roots);
+    }
+
+    // Rest cases are either deliberate leaf IRI, empty blank node, or a cycle
+    return renderLeaf(triple, isCyclic);
+  }
+
+  function renderLiteralValue(t: Triple): HTMLElement {
+    const valueWrapper = createHtmlElement("div", "bf-viewer-val");
+    const valueElement = createHtmlElement("span", undefined, t.object);
+    valueWrapper.appendChild(valueElement);
+
+    const containsLanguageInfo = t.language;
+    const isPlainString = t.datatype && !t.datatype.endsWith("#string");
+
+    if (containsLanguageInfo) {
+      const languageSpan = createHtmlElement(
+        "span",
+        "bf-viewer-meta",
+        ` @${t.language}`,
+      );
+      valueWrapper.appendChild(languageSpan);
+    }
+
+    // Printing xsd:string is noise..?
+    if (!containsLanguageInfo && isPlainString) {
+      // @ts-expect-error TS does not understand isPlainString checks that value exists
+      const datatypeValue = ` (${shortenIri(t.datatype)})`;
+      const datatypeSpan = createHtmlElement(
+        "span",
+        "bf-viewer-meta",
+        datatypeValue,
+      );
+      valueWrapper.appendChild(datatypeSpan);
+    }
+
+    return valueWrapper;
+  }
+
+  function renderNested(
+    triple: Triple,
+    bySubject: TripleIndex,
+    seen: Set<string>,
+    depth: number,
+    roots: Set<string>,
+  ): HTMLElement {
+    const valueWrapper = createHtmlElement("div", "bf-viewer-val");
+    const subjectType = getSubjectType(bySubject, triple.object);
+
+    // Display different label for NamedNodes and BlankNodes
+    const label = subjectType
+      ? `[${humanize(subjectType)}]`
+      : `[${shortenIri(triple.object)}]`;
+
+    const detailsElement = createHtmlElement("details", "bf-viewer-nested");
+    detailsElement.appendChild(
+      createHtmlElement("summary", "bf-viewer-meta", label),
+    );
+    detailsElement.appendChild(
+      renderProperties(
+        triple.object,
+        bySubject,
+        new Set([...seen, triple.object]),
+        depth + 1,
+        roots,
+      ),
+    );
+
+    valueWrapper.appendChild(detailsElement);
+    return valueWrapper;
+  }
+
+  function renderLeaf(triple: Triple, cyclic: boolean): HTMLElement {
+    const valueWrapper = createHtmlElement("div", "bf-viewer-val");
+    const span = createHtmlElement(
+      "span",
+      undefined,
+      shortenIri(triple.object),
+    );
+
+    // Display full IRI on hover
+    if (triple.object_kind === "iri") {
+      span.title = triple.object;
+    }
+
+    valueWrapper.appendChild(span);
+
+    // For cyclic elements display a note
+    if (cyclic) {
+      valueWrapper.appendChild(
+        createHtmlElement("span", "bf-viewer-meta", "(cyclic)"),
+      );
+    }
+
+    return valueWrapper;
+  }
+</script>

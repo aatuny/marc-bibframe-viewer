@@ -1,0 +1,10 @@
+[package]
+name = "bf-viewer-cli"
+license = "MIT"
+authors = ["Aatu Nykänen <aatu@nykaatu.dev>"]
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+bf-viewer-core = { path = "../bf-viewer-core" }
+clap = { version = "4", features = ["derive"] }

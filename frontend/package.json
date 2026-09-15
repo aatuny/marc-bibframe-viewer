@@ -1,0 +1,24 @@
+{
+  "name": "bf-viewer-frontend",
+  "type": "module",
+  "version": "0.2.0",
+  "homepage": "https://github.com/aatuny/marc-bibframe-viewer",
+  "author": {
+    "name": "Aatu Nykänen",
+    "email": "aatu@nykaatu.dev",
+    "url": "https://nykaatu.dev"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^7.3.1"
+  }
+}

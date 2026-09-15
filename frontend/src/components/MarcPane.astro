@@ -1,0 +1,46 @@
+<div class="bf-viewer-pane-actions"></div>
+<pre id="marc" class="bf-viewer-pane bf-viewer-scroll"></pre>
+
+<style>
+  /* min-width: 0 lets a grid item shrink below its content width.
+     Without it, wide content forces the column wider and the two
+     panes stop being equal. */
+  .bf-viewer-pane {
+    min-width: 0;
+  }
+
+  .bf-viewer-scroll {
+    height: 70vh;
+    overflow: auto;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    border: 1px solid currentColor;
+    padding: 0.5rem;
+    resize: horizontal;
+    max-width: 100%;
+  }
+
+  #marc {
+    margin: 0;
+    white-space: pre;
+  }
+
+  .bf-viewer-pane-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-block-end: 0.5rem;
+    height: 30px;
+  }
+</style>
+
+<script>
+  import { requireElement } from "@/utils/dom.ts";
+  import { marcToText } from "@/utils/bf-viewer/marc.ts";
+  import { RECORD_LOADED } from "@/utils/bf-viewer/events.ts";
+
+  const marcElement = requireElement("marc");
+
+  document.addEventListener(RECORD_LOADED, (event) => {
+    marcElement.textContent = marcToText(event.detail.marc);
+  });
+</script>

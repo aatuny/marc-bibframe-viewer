@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["crates/bf-viewer-core", "crates/bf-viewer-cli", "crates/bf-viewer-api"]
