@@ -1,0 +1,15 @@
+[package]
+name = "bf-viewer-core"
+license = "MIT"
+authors = ["Aatu Nykänen <aatu@nykaatu.dev>"]
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+oxiri = "0.2.11"
+oxrdf = "0.3.4"
+oxrdfio = "0.2.6"
+quick-xml = "0.42"
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1.53.1", features = ["io-util", "process", "time"] }

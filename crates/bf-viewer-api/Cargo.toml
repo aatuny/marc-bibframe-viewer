@@ -1,0 +1,16 @@
+[package]
+name = "bf-viewer-api"
+license = "MIT"
+authors = ["Aatu Nykänen <aatu@nykaatu.dev>"]
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.9", features = ["json"] }
+bf-viewer-core = { path = "../bf-viewer-core" }
+dotenvy = "0.15.7"
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal"] }
+tower-http = { version = "0.7.1", features = ["trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

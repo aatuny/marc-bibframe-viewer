@@ -1,0 +1,70 @@
+---
+import MarcPane from "./MarcPane.astro";
+import BibframePane from "./BibframePane.astro";
+import RecordControls from "./RecordControls.astro";
+---
+
+<p class="bf-viewer-unsupported">
+  This tool supports only displays wider than 1024px.
+</p>
+
+<section class="bf-viewer">
+  <RecordControls />
+
+  <div class="bf-viewer-panes">
+    <article>
+      <h3>MARC</h3>
+      <MarcPane />
+    </article>
+    <article>
+      <h3>BIBFRAME</h3>
+      <BibframePane />
+    </article>
+  </div>
+</section>
+
+<style>
+  .bf-viewer {
+    width: min(100vw, 1024px);
+    margin-inline: calc(50% - min(50vw, 576px) + 1.5rem);
+  }
+
+  .bf-viewer-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-block-end: 1rem;
+  }
+
+  #bf-lookup {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-inline: auto;
+  }
+
+  #bf-status {
+    min-height: 1.5em;
+    margin-block: 0.5rem;
+  }
+
+  .bf-viewer-panes {
+    display: grid;
+    grid-template-columns: min(40rem, 45%) 1fr;
+    gap: 1rem;
+  }
+
+  .bf-viewer-unsupported {
+    display: none;
+  }
+
+  @media (max-width: 1023px) {
+    .bf-viewer-unsupported {
+      display: block;
+    }
+
+    .bf-viewer {
+      display: none;
+    }
+  }
+</style>
